@@ -1,5 +1,5 @@
 Before starting building my project, I have created a new database in MySQL Workbench named ecommerce_api.
-I set up and activated a virtual environmentn and installed dependencies.
+I set up and activated a virtual environment and installed dependencies.
 
 I have built a simple RESTful E-commerce API using Python’s Flask framework. 
 It uses SQLAlchemy for handling the database and Marshmallow for validating and serializing data. 
