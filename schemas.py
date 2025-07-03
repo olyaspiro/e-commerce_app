@@ -1,6 +1,21 @@
 from extensions import ma
-from marshmallow import fields, validates_schema, ValidationError
+from marshmallow import fields
 from models import User, Product, Order
+
+class OrderProductSchema(ma.Schema):
+    product_id = fields.Integer(required=True)
+    quantity = fields.Integer(required=True, validate=lambda n: n > 0)
+
+class OrderSchema(ma.SQLAlchemyAutoSchema):
+    class Meta:
+        model = Order
+        include_fk = True
+        load_instance = True
+
+    id = ma.auto_field(dump_only=True)
+    created_at = ma.auto_field(dump_only=True)
+    user_id = ma.auto_field(required=True)
+    products = fields.List(fields.Nested(OrderProductSchema), required=True)
 
 class UserSchema(ma.SQLAlchemyAutoSchema):
     class Meta:
@@ -12,6 +27,9 @@ class UserSchema(ma.SQLAlchemyAutoSchema):
     username = ma.auto_field(required=True)
     email = ma.auto_field(required=True)
 
+    # Use the orders_ids property to output list of order IDs
+    orders = fields.List(fields.Integer(), dump_only=True, attribute="orders_ids")
+
 class ProductSchema(ma.SQLAlchemyAutoSchema):
     class Meta:
         model = Product
@@ -22,30 +40,6 @@ class ProductSchema(ma.SQLAlchemyAutoSchema):
     name = ma.auto_field(required=True)
     description = ma.auto_field()
     price = ma.auto_field(required=True)
-
-class OrderProductSchema(ma.Schema):
-    product_id = fields.Integer(required=True)
-    quantity = fields.Integer(required=True, validate=lambda n: n > 0)
-
-class OrderSchema(ma.SQLAlchemyAutoSchema):
-    class Meta:
-        model = Order
-        load_instance = True
-        include_fk = True
-
-    id = ma.auto_field(dump_only=True)
-    created_at = ma.auto_field(dump_only=True)
-    user_id = ma.auto_field(required=True)
-    products = fields.List(fields.Nested(OrderProductSchema), required=True)
-
-    @validates_schema
-    def validate_products(self, data, **kwargs):
-        products = data.get('products', [])
-        if not products:
-            raise ValidationError('Order must contain at least one product.', 'products')
-        product_ids = [p['product_id'] for p in products]
-        if len(product_ids) != len(set(product_ids)):
-            raise ValidationError('Duplicate product_id in products list.', 'products')
 
 user_schema = UserSchema()
 users_schema = UserSchema(many=True)

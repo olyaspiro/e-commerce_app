@@ -125,7 +125,6 @@ def register_order_routes(app):
         json_data = request.get_json()
         if not json_data:
             return jsonify({"message": "No input data provided"}), 400
-        breakpoint()
         try:
             data = order_schema.load(json_data)
         except Exception as err:
@@ -137,13 +136,14 @@ def register_order_routes(app):
 
         order = Order(user_id=data.user_id)
         db.session.add(order)
+        db.session.flush()  # get ID before committing
 
-        for item in json_data['products']:
+        for item in json_data.get('products', []):
             product = Product.query.get(item['product_id'])
             if not product:
                 db.session.rollback()
                 return jsonify({"message": f"Product with id {item['product_id']} not found"}), 404
-            op = OrderProduct(order=order, product=product, quantity=item['quantity'])
+            op = OrderProduct(order_id=order.id, product_id=product.id, quantity=item['quantity'])
             db.session.add(op)
 
         db.session.commit()
@@ -159,36 +159,40 @@ def register_order_routes(app):
         order = Order.query.get_or_404(order_id)
         return order_schema.jsonify(order)
 
-    @app.route('/orders/<int:order_id>', methods=['PUT'])
-    def update_order(order_id):
+    @app.route('/orders/<int:order_id>/add_product/<int:product_id>', methods=['PUT'])
+    def add_product_to_order(order_id, product_id):
         order = Order.query.get_or_404(order_id)
-        json_data = request.get_json()
-        if not json_data:
-            return jsonify({"message": "No input data provided"}), 400
+        product = Product.query.get_or_404(product_id)
 
-        try:
-            data = order_schema.load(json_data, partial=True)
-        except Exception as err:
-            return jsonify(err.messages if hasattr(err, 'messages') else str(err)), 422
+        existing = OrderProduct.query.filter_by(order_id=order.id, product_id=product.id).first()
+        if existing:
+            return jsonify({"message": "Product already in order"}), 400
 
-        if 'user_id' in json_data:
-            user = User.query.get(json_data['user_id'])
-            if not user:
-                return jsonify({"message": "User not found"}), 404
-            order.user_id = json_data['user_id']
-
-        if 'products' in json_data:
-            OrderProduct.query.filter_by(order_id=order.id).delete()
-            for item in json_data['products']:
-                product = Product.query.get(item['product_id'])
-                if not product:
-                    db.session.rollback()
-                    return jsonify({"message": f"Product with id {item['product_id']} not found"}), 404
-                op = OrderProduct(order=order, product=product, quantity=item['quantity'])
-                db.session.add(op)
-
+        new_op = OrderProduct(order_id=order.id, product_id=product.id, quantity=1)
+        db.session.add(new_op)
         db.session.commit()
-        return order_schema.jsonify(order)
+        return jsonify({"message": f"Added product {product.id} to order {order.id}"}), 200
+
+    @app.route('/orders/<int:order_id>/remove_product/<int:product_id>', methods=['DELETE'])
+    def remove_product_from_order(order_id, product_id):
+        op = OrderProduct.query.filter_by(order_id=order_id, product_id=product_id).first()
+        if not op:
+            return jsonify({"message": "Product not found in this order"}), 404
+        db.session.delete(op)
+        db.session.commit()
+        return jsonify({"message": f"Removed product {product_id} from order {order_id}"}), 200
+
+    @app.route('/orders/user/<int:user_id>', methods=['GET'])
+    def get_orders_by_user(user_id):
+        user = User.query.get_or_404(user_id)
+        orders = Order.query.filter_by(user_id=user_id).all()
+        return orders_schema.jsonify(orders)
+
+    @app.route('/orders/<int:order_id>/products', methods=['GET'])
+    def get_products_by_order(order_id):
+        order = Order.query.get_or_404(order_id)
+        products = [op.product for op in order.order_products]
+        return products_schema.jsonify(products)
 
     @app.route('/orders/<int:order_id>', methods=['DELETE'])
     def delete_order(order_id):
